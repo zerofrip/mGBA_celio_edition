@@ -14,63 +14,51 @@
 
 static void _checkWatchpoints(struct ARMDebugger* debugger, uint32_t address, enum mWatchpointType type, uint32_t newValue, int width);
 
-#define FIND_DEBUGGER(DEBUGGER, CPU) \
-	do { \
-		DEBUGGER = 0; \
-		size_t i; \
-		for (i = 0; i < CPU->numComponents; ++i) { \
-			if (CPU->components[i]->id == DEBUGGER_ID) { \
-				DEBUGGER = (struct ARMDebugger*) ((struct mDebugger*) cpu->components[i])->platform; \
-				goto debuggerFound; \
-			} \
-		} \
-		abort(); \
-		debuggerFound: break; \
-	} while(0)
-
 #define CREATE_SHIM(NAME, RETURN, TYPES, ...) \
 	static RETURN DebuggerShim_ ## NAME TYPES { \
-		struct ARMDebugger* debugger; \
-		FIND_DEBUGGER(debugger, cpu); \
+		struct ARMDebugger* debugger = cpu->debuggerShim; \
 		return debugger->originalMemory.NAME(cpu, __VA_ARGS__); \
 	}
 
 #define CREATE_WATCHPOINT_READ_SHIM(NAME, WIDTH, RETURN, TYPES, ...) \
 	static RETURN DebuggerShim_ ## NAME TYPES { \
-		struct ARMDebugger* debugger; \
-		FIND_DEBUGGER(debugger, cpu); \
-		_checkWatchpoints(debugger, address, WATCHPOINT_READ, 0, WIDTH); \
+		struct ARMDebugger* debugger = cpu->debuggerShim; \
+		if (_watchpointMayHit(debugger, address, WATCHPOINT_READ, WIDTH)) { \
+			_checkWatchpoints(debugger, address, WATCHPOINT_READ, 0, WIDTH); \
+		} \
 		return debugger->originalMemory.NAME(cpu, __VA_ARGS__); \
 	}
 
 #define CREATE_WATCHPOINT_WRITE_SHIM(NAME, WIDTH, RETURN, TYPES, ...) \
 	static RETURN DebuggerShim_ ## NAME TYPES { \
-		struct ARMDebugger* debugger; \
-		FIND_DEBUGGER(debugger, cpu); \
-		_checkWatchpoints(debugger, address, WATCHPOINT_WRITE, value, WIDTH); \
+		struct ARMDebugger* debugger = cpu->debuggerShim; \
+		if (_watchpointMayHit(debugger, address, WATCHPOINT_WRITE, WIDTH)) { \
+			_checkWatchpoints(debugger, address, WATCHPOINT_WRITE, value, WIDTH); \
+		} \
 		return debugger->originalMemory.NAME(cpu, __VA_ARGS__); \
 	}
 
-#define CREATE_MULTIPLE_WATCHPOINT_SHIM(NAME, ACCESS_TYPE) \
-	static uint32_t DebuggerShim_ ## NAME (struct ARMCore* cpu, uint32_t address, int mask, enum LSMDirection direction, int* cycleCounter) { \
-		struct ARMDebugger* debugger; \
-		FIND_DEBUGGER(debugger, cpu); \
-		uint32_t popcount = popcount32(mask); \
-		int offset = 4; \
-		int base = address; \
-		if (direction & LSM_D) { \
-			offset = -4; \
-			base -= (popcount << 2) - 4; \
-		} \
-		if (direction & LSM_B) { \
-			base += offset; \
-		} \
-		unsigned i; \
-		for (i = 0; i < popcount; ++i) { \
-			_checkWatchpoints(debugger, base + 4 * i, ACCESS_TYPE, 0, 4); \
-		} \
-		return debugger->originalMemory.NAME(cpu, address, mask, direction, cycleCounter); \
+static bool _rangeMayContain(uint32_t accessMin, uint32_t accessMax, uint32_t rangeMin, uint32_t rangeMax) {
+	if (rangeMin >= rangeMax) {
+		return false;
 	}
+	return accessMax > rangeMin && accessMin < rangeMax;
+}
+
+static bool _watchpointMayHit(struct ARMDebugger* debugger, uint32_t address, enum mWatchpointType type, int width) {
+	uint32_t minAddress = address & ~(width - 1);
+	uint32_t maxAddress = minAddress + width;
+	switch (type) {
+	case WATCHPOINT_READ:
+		return _rangeMayContain(minAddress, maxAddress, debugger->wpRead.min, debugger->wpRead.max);
+	case WATCHPOINT_WRITE:
+		return _rangeMayContain(minAddress, maxAddress, debugger->wpWrite.min, debugger->wpWrite.max);
+	case WATCHPOINT_FETCH:
+		return _rangeMayContain(minAddress, maxAddress, debugger->wpFetch.min, debugger->wpFetch.max);
+	default:
+		return true;
+	}
+}
 
 CREATE_WATCHPOINT_READ_SHIM(load32, 4, uint32_t, (struct ARMCore* cpu, uint32_t address, int* cycleCounter), address, cycleCounter)
 CREATE_WATCHPOINT_READ_SHIM(load16, 2, uint32_t, (struct ARMCore* cpu, uint32_t address, int* cycleCounter), address, cycleCounter)
@@ -78,9 +66,51 @@ CREATE_WATCHPOINT_READ_SHIM(load8, 1, uint32_t, (struct ARMCore* cpu, uint32_t a
 CREATE_WATCHPOINT_WRITE_SHIM(store32, 4, void, (struct ARMCore* cpu, uint32_t address, int32_t value, int* cycleCounter), address, value, cycleCounter)
 CREATE_WATCHPOINT_WRITE_SHIM(store16, 2, void, (struct ARMCore* cpu, uint32_t address, int16_t value, int* cycleCounter), address, value, cycleCounter)
 CREATE_WATCHPOINT_WRITE_SHIM(store8, 1, void, (struct ARMCore* cpu, uint32_t address, int8_t value, int* cycleCounter), address, value, cycleCounter)
-CREATE_MULTIPLE_WATCHPOINT_SHIM(loadMultiple, WATCHPOINT_READ)
-CREATE_MULTIPLE_WATCHPOINT_SHIM(storeMultiple, WATCHPOINT_WRITE)
 CREATE_SHIM(setActiveRegion, void, (struct ARMCore* cpu, uint32_t address), address)
+
+static uint32_t DebuggerShim_loadMultiple(struct ARMCore* cpu, uint32_t address, int mask, enum LSMDirection direction, int* cycleCounter) {
+	struct ARMDebugger* debugger = cpu->debuggerShim;
+	uint32_t popcount = popcount32(mask);
+	int offset = 4;
+	int base = address;
+	if (direction & LSM_D) {
+		offset = -4;
+		base -= (popcount << 2) - 4;
+	}
+	if (direction & LSM_B) {
+		base += offset;
+	}
+	uint32_t end = (uint32_t) base + (popcount << 2);
+	if (end < (uint32_t) base || _rangeMayContain(base, end, debugger->wpRead.min, debugger->wpRead.max)) {
+		unsigned i;
+		for (i = 0; i < popcount; ++i) {
+			_checkWatchpoints(debugger, base + 4 * i, WATCHPOINT_READ, 0, 4);
+		}
+	}
+	return debugger->originalMemory.loadMultiple(cpu, address, mask, direction, cycleCounter);
+}
+
+static uint32_t DebuggerShim_storeMultiple(struct ARMCore* cpu, uint32_t address, int mask, enum LSMDirection direction, int* cycleCounter) {
+	struct ARMDebugger* debugger = cpu->debuggerShim;
+	uint32_t popcount = popcount32(mask);
+	int offset = 4;
+	int base = address;
+	if (direction & LSM_D) {
+		offset = -4;
+		base -= (popcount << 2) - 4;
+	}
+	if (direction & LSM_B) {
+		base += offset;
+	}
+	uint32_t end = (uint32_t) base + (popcount << 2);
+	if (end < (uint32_t) base || _rangeMayContain(base, end, debugger->wpWrite.min, debugger->wpWrite.max)) {
+		unsigned i;
+		for (i = 0; i < popcount; ++i) {
+			_checkWatchpoints(debugger, base + 4 * i, WATCHPOINT_WRITE, 0, 4);
+		}
+	}
+	return debugger->originalMemory.storeMultiple(cpu, address, mask, direction, cycleCounter);
+}
 
 static void _checkWatchpoints(struct ARMDebugger* debugger, uint32_t address, enum mWatchpointType type, uint32_t newValue, int width) {
 	struct mWatchpoint* watchpoint;
@@ -102,18 +132,22 @@ static void _checkWatchpoints(struct ARMDebugger* debugger, uint32_t address, en
 			}
 
 			uint32_t oldValue;
-			switch (width) {
-			case 1:
-				oldValue = debugger->originalMemory.load8(debugger->cpu, address, 0);
-				break;
-			case 2:
-				oldValue = debugger->originalMemory.load16(debugger->cpu, address, 0);
-				break;
-			case 4:
-				oldValue = debugger->originalMemory.load32(debugger->cpu, address, 0);
-				break;
-			default:
-				continue;
+			if (type == WATCHPOINT_FETCH) {
+				oldValue = 0;
+			} else {
+				switch (width) {
+				case 1:
+					oldValue = debugger->originalMemory.load8(debugger->cpu, address, 0);
+					break;
+				case 2:
+					oldValue = debugger->originalMemory.load16(debugger->cpu, address, 0);
+					break;
+				case 4:
+					oldValue = debugger->originalMemory.load32(debugger->cpu, address, 0);
+					break;
+				default:
+					continue;
+				}
 			}
 			if ((watchpoint->type & WATCHPOINT_CHANGE) && newValue == oldValue) {
 				continue;
@@ -124,7 +158,7 @@ static void _checkWatchpoints(struct ARMDebugger* debugger, uint32_t address, en
 			info.type.wp.newValue = newValue;
 			info.type.wp.watchType = watchpoint->type;
 			info.type.wp.accessType = type;
-			info.type.wp.accessSource = debugger->cpu->memory.accessSource;
+			info.type.wp.accessSource = type == WATCHPOINT_FETCH ? mACCESS_PROGRAM : debugger->cpu->memory.accessSource;
 			info.address = address;
 			info.segment = 0;
 			info.width = width;
@@ -133,6 +167,90 @@ static void _checkWatchpoints(struct ARMDebugger* debugger, uint32_t address, en
 			mDebuggerEnter(debugger->d.p, DEBUGGER_ENTER_WATCHPOINT, &info);
 		}
 	}
+}
+
+static void DebuggerShim_fetch(struct ARMCore* cpu, uint32_t address, int width) {
+	struct ARMDebugger* debugger = cpu->debuggerShim;
+	if (_watchpointMayHit(debugger, address, WATCHPOINT_FETCH, width)) {
+		_checkWatchpoints(debugger, address, WATCHPOINT_FETCH, 0, width);
+	}
+	if (debugger->originalMemory.fetch) {
+		debugger->originalMemory.fetch(cpu, address, width);
+	}
+}
+
+static void _rebuildWatchpointBounds(struct ARMDebugger* debugger) {
+	debugger->wpRead.min = debugger->wpRead.max = 0;
+	debugger->wpWrite.min = debugger->wpWrite.max = 0;
+	debugger->wpFetch.min = debugger->wpFetch.max = 0;
+
+	struct mWatchpoint* watchpoint;
+	size_t i;
+	for (i = 0; i < mWatchpointListSize(&debugger->watchpoints); ++i) {
+		watchpoint = mWatchpointListGetPointer(&debugger->watchpoints, i);
+		if (watchpoint->disabled) {
+			continue;
+		}
+		if (watchpoint->minAddress >= watchpoint->maxAddress) {
+			continue;
+		}
+
+		if (watchpoint->type & WATCHPOINT_READ) {
+			if (debugger->wpRead.min >= debugger->wpRead.max) {
+				debugger->wpRead.min = watchpoint->minAddress;
+				debugger->wpRead.max = watchpoint->maxAddress;
+			} else {
+				if (watchpoint->minAddress < debugger->wpRead.min) {
+					debugger->wpRead.min = watchpoint->minAddress;
+				}
+				if (watchpoint->maxAddress > debugger->wpRead.max) {
+					debugger->wpRead.max = watchpoint->maxAddress;
+				}
+			}
+		}
+		if (watchpoint->type & WATCHPOINT_WRITE) {
+			if (debugger->wpWrite.min >= debugger->wpWrite.max) {
+				debugger->wpWrite.min = watchpoint->minAddress;
+				debugger->wpWrite.max = watchpoint->maxAddress;
+			} else {
+				if (watchpoint->minAddress < debugger->wpWrite.min) {
+					debugger->wpWrite.min = watchpoint->minAddress;
+				}
+				if (watchpoint->maxAddress > debugger->wpWrite.max) {
+					debugger->wpWrite.max = watchpoint->maxAddress;
+				}
+			}
+		}
+		if (watchpoint->type & WATCHPOINT_FETCH) {
+			if (debugger->wpFetch.min >= debugger->wpFetch.max) {
+				debugger->wpFetch.min = watchpoint->minAddress;
+				debugger->wpFetch.max = watchpoint->maxAddress;
+			} else {
+				if (watchpoint->minAddress < debugger->wpFetch.min) {
+					debugger->wpFetch.min = watchpoint->minAddress;
+				}
+				if (watchpoint->maxAddress > debugger->wpFetch.max) {
+					debugger->wpFetch.max = watchpoint->maxAddress;
+				}
+			}
+		}
+	}
+}
+
+static void _updateFetchShim(struct ARMDebugger* debugger) {
+	if (!debugger->shimsInstalled) {
+		return;
+	}
+	if (debugger->wpFetch.min < debugger->wpFetch.max) {
+		debugger->cpu->memory.fetch = DebuggerShim_fetch;
+	} else {
+		debugger->cpu->memory.fetch = debugger->originalMemory.fetch;
+	}
+}
+
+void ARMDebuggerRebuildWatchpointBounds(struct ARMDebugger* debugger) {
+	_rebuildWatchpointBounds(debugger);
+	_updateFetchShim(debugger);
 }
 
 void ARMDebuggerInstallMemoryShim(struct ARMDebugger* debugger) {
@@ -146,6 +264,9 @@ void ARMDebuggerInstallMemoryShim(struct ARMDebugger* debugger) {
 	debugger->cpu->memory.storeMultiple = DebuggerShim_storeMultiple;
 	debugger->cpu->memory.loadMultiple = DebuggerShim_loadMultiple;
 	debugger->cpu->memory.setActiveRegion = DebuggerShim_setActiveRegion;
+	debugger->cpu->debuggerShim = debugger;
+	debugger->shimsInstalled = true;
+	ARMDebuggerRebuildWatchpointBounds(debugger);
 }
 
 void ARMDebuggerRemoveMemoryShim(struct ARMDebugger* debugger) {
@@ -158,4 +279,7 @@ void ARMDebuggerRemoveMemoryShim(struct ARMDebugger* debugger) {
 	debugger->cpu->memory.storeMultiple = debugger->originalMemory.storeMultiple;
 	debugger->cpu->memory.loadMultiple = debugger->originalMemory.loadMultiple;
 	debugger->cpu->memory.setActiveRegion = debugger->originalMemory.setActiveRegion;
+	debugger->cpu->memory.fetch = debugger->originalMemory.fetch;
+	debugger->cpu->debuggerShim = NULL;
+	debugger->shimsInstalled = false;
 }

@@ -879,6 +879,7 @@ static void _scriptDebuggerEntered(struct mDebuggerModule* debugger, enum mDebug
 	static struct mScriptValue keyOldValue = mSCRIPT_CHARP("oldValue");
 	static struct mScriptValue keyNewValue = mSCRIPT_CHARP("newValue");
 	static struct mScriptValue keyAccessType = mSCRIPT_CHARP("accessType");
+	static struct mScriptValue keyAccessSource = mSCRIPT_CHARP("accessSource");
 
 	struct mScriptValue valAddress = mSCRIPT_MAKE_U32(info->address);
 	struct mScriptValue valWidth = mSCRIPT_MAKE_S32(info->width);
@@ -886,6 +887,7 @@ static void _scriptDebuggerEntered(struct mDebuggerModule* debugger, enum mDebug
 	struct mScriptValue valOldValue;
 	struct mScriptValue valNewValue;
 	struct mScriptValue valAccessType;
+	struct mScriptValue valAccessSource;
 
 	mScriptTableInsert(&cbInfo, &keyAddress, &valAddress);
 	if (info->width > 0) {
@@ -899,12 +901,14 @@ static void _scriptDebuggerEntered(struct mDebuggerModule* debugger, enum mDebug
 		valOldValue = mSCRIPT_MAKE_S32(info->type.wp.oldValue);
 		valNewValue = mSCRIPT_MAKE_S32(info->type.wp.newValue);
 		valAccessType = mSCRIPT_MAKE_S32(info->type.wp.accessType);
+		valAccessSource = mSCRIPT_MAKE_S32(info->type.wp.accessSource);
 
 		mScriptTableInsert(&cbInfo, &keyOldValue, &valOldValue);
-		if (info->type.wp.accessType != WATCHPOINT_READ) {
+		if (info->type.wp.accessType & WATCHPOINT_WRITE) {
 			mScriptTableInsert(&cbInfo, &keyNewValue, &valNewValue);
 		}
 		mScriptTableInsert(&cbInfo, &keyAccessType, &valAccessType);
+		mScriptTableInsert(&cbInfo, &keyAccessSource, &valAccessSource);
 	}
 
 	_runCallbacks(scriptDebugger, point, &cbInfo);

@@ -6,6 +6,7 @@
 #include <mgba/script/base.h>
 
 #include <mgba/core/core.h>
+#include <mgba/core/cpu.h>
 #include <mgba/core/serialize.h>
 #include <mgba/core/version.h>
 #include <mgba/script/context.h>
@@ -263,6 +264,16 @@ void mScriptContextAttachStdlib(struct mScriptContext* context) {
 		mSCRIPT_CONSTANT_PAIR(WATCHPOINT, READ),
 		mSCRIPT_CONSTANT_PAIR(WATCHPOINT, RW),
 		mSCRIPT_CONSTANT_PAIR(WATCHPOINT, WRITE_CHANGE),
+		mSCRIPT_CONSTANT_PAIR(WATCHPOINT, FETCH),
+		mSCRIPT_KV_SENTINEL
+	});
+	mScriptContextExportConstants(context, "MEMORY_ACCESS_SOURCE", (struct mScriptKVPair[]) {
+		mSCRIPT_CONSTANT_PAIR(mACCESS, UNKNOWN),
+		mSCRIPT_CONSTANT_PAIR(mACCESS, PROGRAM),
+		mSCRIPT_CONSTANT_PAIR(mACCESS, DMA),
+		mSCRIPT_CONSTANT_PAIR(mACCESS, SYSTEM),
+		mSCRIPT_CONSTANT_PAIR(mACCESS, DECOMPRESS),
+		mSCRIPT_CONSTANT_PAIR(mACCESS, COPY),
 		mSCRIPT_KV_SENTINEL
 	});
 #endif

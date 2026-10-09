@@ -36,6 +36,12 @@ struct ARMDebugger {
 	struct mWatchpointList watchpoints;
 	struct ARMMemory originalMemory;
 
+	struct {
+		uint32_t min;
+		uint32_t max;
+	} wpRead, wpWrite, wpFetch;
+	bool shimsInstalled;
+
 	ssize_t nextId;
 	enum mStackTraceMode stackTraceMode;
 

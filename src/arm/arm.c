@@ -45,6 +45,7 @@ void ARMSetPrivilegeMode(struct ARMCore* cpu, enum PrivilegeMode mode) {
 }
 
 void ARMInit(struct ARMCore* cpu) {
+	cpu->memory.fetch = NULL;
 	memset(cpu->cp, 0, sizeof(cpu->cp));
 	cpu->master->init(cpu, cpu->master);
 	size_t i;
@@ -203,6 +204,9 @@ static inline void ARMStep(struct ARMCore* cpu) {
 	cpu->prefetch[0] = cpu->prefetch[1];
 	cpu->gprs[ARM_PC] += WORD_SIZE_ARM;
 	LOAD_32(cpu->prefetch[1], cpu->gprs[ARM_PC] & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) {
+		cpu->memory.fetch(cpu, cpu->gprs[ARM_PC], WORD_SIZE_ARM);
+	}
 
 	unsigned condition = opcode >> 28;
 	if (condition != 0xE) {
@@ -222,6 +226,9 @@ static inline void ThumbStep(struct ARMCore* cpu) {
 	cpu->prefetch[0] = cpu->prefetch[1];
 	cpu->gprs[ARM_PC] += WORD_SIZE_THUMB;
 	LOAD_16(cpu->prefetch[1], cpu->gprs[ARM_PC] & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) {
+		cpu->memory.fetch(cpu, cpu->gprs[ARM_PC], WORD_SIZE_THUMB);
+	}
 	ThumbInstruction instruction = _thumbTable[opcode >> 6];
 	instruction(cpu, opcode);
 }

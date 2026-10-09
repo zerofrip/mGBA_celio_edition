@@ -74,8 +74,10 @@ static inline int32_t ARMWritePC(struct ARMCore* cpu) {
 	uint32_t pc = cpu->gprs[ARM_PC] & -WORD_SIZE_THUMB;
 	cpu->memory.setActiveRegion(cpu, pc);
 	LOAD_32(cpu->prefetch[0], pc & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) cpu->memory.fetch(cpu, pc, WORD_SIZE_ARM);
 	pc += WORD_SIZE_ARM;
 	LOAD_32(cpu->prefetch[1], pc & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) cpu->memory.fetch(cpu, pc, WORD_SIZE_ARM);
 	cpu->gprs[ARM_PC] = pc;
 	return 2 + cpu->memory.activeNonseqCycles32 + cpu->memory.activeSeqCycles32;
 }
@@ -84,8 +86,10 @@ static inline int32_t ThumbWritePC(struct ARMCore* cpu) {
 	uint32_t pc = cpu->gprs[ARM_PC] & -WORD_SIZE_THUMB;
 	cpu->memory.setActiveRegion(cpu, pc);
 	LOAD_16(cpu->prefetch[0], pc & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) cpu->memory.fetch(cpu, pc, WORD_SIZE_THUMB);
 	pc += WORD_SIZE_THUMB;
 	LOAD_16(cpu->prefetch[1], pc & cpu->memory.activeMask, cpu->memory.activeRegion);
+	if (cpu->memory.fetch) cpu->memory.fetch(cpu, pc, WORD_SIZE_THUMB);
 	cpu->gprs[ARM_PC] = pc;
 	return 2 + cpu->memory.activeNonseqCycles16 + cpu->memory.activeSeqCycles16;
 }

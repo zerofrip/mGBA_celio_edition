@@ -306,6 +306,7 @@ void ARMDebuggerInit(void* cpu, struct mDebuggerPlatform* platform) {
 	struct ARMDebugger* debugger = (struct ARMDebugger*) platform;
 	debugger->cpu = cpu;
 	debugger->originalMemory = debugger->cpu->memory;
+	debugger->shimsInstalled = false;
 	debugger->nextId = 1;
 	debugger->stackTraceMode = STACK_TRACE_DISABLED;
 	ARMDebugBreakpointListInit(&debugger->breakpoints, 0);
@@ -447,6 +448,8 @@ static bool ARMDebuggerClearBreakpoint(struct mDebuggerPlatform* d, ssize_t id) 
 			mWatchpointListShift(watchpoints, i, 1);
 			if (!mWatchpointListSize(&debugger->watchpoints)) {
 				ARMDebuggerRemoveMemoryShim(debugger);
+			} else {
+				ARMDebuggerRebuildWatchpointBounds(debugger);
 			}
 			return true;
 		}
@@ -482,6 +485,7 @@ static bool ARMDebuggerToggleBreakpoint(struct mDebuggerPlatform* d, ssize_t id,
 		struct mWatchpoint* watchpoint = mWatchpointListGetPointer(watchpoints, i);
 		if (watchpoint->id == id) {
 			watchpoint->disabled = !status;
+			ARMDebuggerRebuildWatchpointBounds(debugger);
 			return true;
 		}
 	}
@@ -546,6 +550,7 @@ static ssize_t ARMDebuggerSetWatchpoint(struct mDebuggerPlatform* d, struct mDeb
 	*watchpoint = *info;
 	watchpoint->id = id;
 	TableInsert(&debugger->d.p->pointOwner, id, owner);
+	ARMDebuggerRebuildWatchpointBounds(debugger);
 	return id;
 }
 

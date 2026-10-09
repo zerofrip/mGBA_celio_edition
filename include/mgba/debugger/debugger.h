@@ -76,6 +76,7 @@ enum mWatchpointType {
 	WATCHPOINT_RW = 3,
 	WATCHPOINT_CHANGE = 4,
 	WATCHPOINT_WRITE_CHANGE = 5,
+	WATCHPOINT_FETCH = 8,
 };
 
 enum mBreakpointType {

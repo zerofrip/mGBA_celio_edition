@@ -14,6 +14,8 @@
 #include "script/test.h"
 
 #ifdef M_CORE_GBA
+#include <mgba/internal/arm/arm.h>
+#include <mgba/internal/arm/isa-inlines.h>
 #include <mgba/internal/gba/memory.h>
 #define TEST_PLATFORM mPLATFORM_GBA
 #define RAM_BASE GBA_BASE_IWRAM
@@ -849,6 +851,54 @@ M_TEST_DEFINE(rangeWatchpoint) {
 	TEARDOWN_CORE;
 	mDebuggerDeinit(&debugger);
 }
+
+#ifdef M_CORE_GBA
+M_TEST_DEFINE(fetchWatchpoint) {
+	SETUP_LUA;
+	mScriptContextAttachStdlib(&context);
+	CREATE_CORE;
+	struct mDebugger debugger;
+	core->reset(core);
+	mScriptContextAttachCore(&context, core);
+	mDebuggerInit(&debugger);
+	mDebuggerAttach(&debugger, core);
+
+	TEST_PROGRAM(
+		"hit = 0\n"
+		"function onFetch(info)\n"
+		"  assert(info.accessType == C.WATCHPOINT_TYPE.FETCH)\n"
+		"  assert(info.accessSource == C.MEMORY_ACCESS_SOURCE.PROGRAM)\n"
+		"  assert(info.width == 4)\n"
+		"  hit = hit + 1\n"
+		"end"
+	);
+	struct mScriptValue base = mSCRIPT_MAKE_S32(RAM_BASE);
+	lua->setGlobal(lua, "base", &base);
+	TEST_PROGRAM("assert(0 < emu:setRangeWatchpoint(onFetch, base, base + 4, C.WATCHPOINT_TYPE.FETCH))");
+	struct ARMCore* cpu = core->cpu;
+	assert_non_null(cpu->memory.fetch);
+	cpu->gprs[ARM_PC] = RAM_BASE;
+	ARMWritePC(cpu);
+	TEST_PROGRAM("assert(hit == 2)");
+	TEST_PROGRAM(
+		"dmaHit = 0\n"
+		"function onDma(info)\n"
+		"  assert(info.accessType == C.WATCHPOINT_TYPE.READ)\n"
+		"  assert(info.accessSource == C.MEMORY_ACCESS_SOURCE.DMA)\n"
+		"  dmaHit = dmaHit + 1\n"
+		"end"
+	);
+	TEST_PROGRAM("assert(0 < emu:setRangeWatchpoint(onDma, base, base + 4, C.WATCHPOINT_TYPE.READ))");
+	cpu->memory.accessSource = mACCESS_DMA;
+	cpu->memory.load32(cpu, RAM_BASE, 0);
+	cpu->memory.accessSource = mACCESS_UNKNOWN;
+	TEST_PROGRAM("assert(dmaHit == 1)");
+
+	mScriptContextDeinit(&context);
+	TEARDOWN_CORE;
+	mDebuggerDeinit(&debugger);
+}
+#endif
 #endif
 
 M_TEST_SUITE_DEFINE_SETUP_TEARDOWN(mScriptCore,
@@ -874,5 +924,8 @@ M_TEST_SUITE_DEFINE_SETUP_TEARDOWN(mScriptCore,
 	cmocka_unit_test(overlappingBreakpoint),
 	cmocka_unit_test(overlappingWatchpoint),
 	cmocka_unit_test(rangeWatchpoint),
+#ifdef M_CORE_GBA
+	cmocka_unit_test(fetchWatchpoint),
+#endif
 #endif
 )

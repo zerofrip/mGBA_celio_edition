@@ -67,6 +67,7 @@ enum LSMDirection {
 };
 
 struct ARMCore;
+struct ARMDebugger;
 
 union PSR {
 	struct {
@@ -132,6 +133,7 @@ struct ARMMemory {
 	uint32_t activeNonseqCycles16;
 	int32_t (*stall)(struct ARMCore*, int32_t wait);
 	void (*setActiveRegion)(struct ARMCore*, uint32_t address);
+	void (*fetch)(struct ARMCore*, uint32_t address, int width);
 
 	enum mMemoryAccessSource accessSource;
 };
@@ -193,6 +195,7 @@ struct ARMCore {
 
 	size_t numComponents;
 	struct mCPUComponent** components;
+	struct ARMDebugger* debuggerShim;
 };
 #undef ARM_REGISTER_FILE
 

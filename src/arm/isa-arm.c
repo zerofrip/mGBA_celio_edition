@@ -723,7 +723,9 @@ DEFINE_INSTRUCTION_ARM(MSR,
 		cpu->gprs[ARM_PC] += WORD_SIZE_THUMB;
 	} else {
 		LOAD_32(cpu->prefetch[0], (cpu->gprs[ARM_PC] - WORD_SIZE_ARM) & cpu->memory.activeMask, cpu->memory.activeRegion);
+		if (cpu->memory.fetch) cpu->memory.fetch(cpu, cpu->gprs[ARM_PC] - WORD_SIZE_ARM, WORD_SIZE_ARM);
 		LOAD_32(cpu->prefetch[1], cpu->gprs[ARM_PC] & cpu->memory.activeMask, cpu->memory.activeRegion);
+		if (cpu->memory.fetch) cpu->memory.fetch(cpu, cpu->gprs[ARM_PC], WORD_SIZE_ARM);
 	})
 
 DEFINE_INSTRUCTION_ARM(MSRR,
@@ -765,7 +767,9 @@ DEFINE_INSTRUCTION_ARM(MSRI,
 		cpu->gprs[ARM_PC] += WORD_SIZE_THUMB;
 	} else {
 		LOAD_32(cpu->prefetch[0], (cpu->gprs[ARM_PC] - WORD_SIZE_ARM) & cpu->memory.activeMask, cpu->memory.activeRegion);
+		if (cpu->memory.fetch) cpu->memory.fetch(cpu, cpu->gprs[ARM_PC] - WORD_SIZE_ARM, WORD_SIZE_ARM);
 		LOAD_32(cpu->prefetch[1], cpu->gprs[ARM_PC] & cpu->memory.activeMask, cpu->memory.activeRegion);
+		if (cpu->memory.fetch) cpu->memory.fetch(cpu, cpu->gprs[ARM_PC], WORD_SIZE_ARM);
 	})
 
 DEFINE_INSTRUCTION_ARM(MSRRI,
