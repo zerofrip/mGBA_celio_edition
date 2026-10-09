@@ -196,7 +196,19 @@ struct ARMCore {
 	size_t numComponents;
 	struct mCPUComponent** components;
 	struct ARMDebugger* debuggerShim;
+
+	// CPU overclock: instructions cost 1 / (1 << overclockShift) of their cycles.
+	// DMA, video, audio, timers and serial keep their real timing.
+	int overclockShift;
+	int32_t overclockFrac;
 };
+
+#define ARM_OVERCLOCK_CYCLES(CPU, CYCLES) \
+	if ((CPU)->overclockShift) { \
+		(CPU)->overclockFrac += (CYCLES); \
+		(CYCLES) = (CPU)->overclockFrac >> (CPU)->overclockShift; \
+		(CPU)->overclockFrac -= (CYCLES) << (CPU)->overclockShift; \
+	}
 #undef ARM_REGISTER_FILE
 
 void ARMInit(struct ARMCore* cpu);

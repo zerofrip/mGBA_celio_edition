@@ -22,6 +22,7 @@ CXX_GUARD_START
 
 enum GBAMemoryRegion {
 	GBA_REGION_BIOS = 0x0,
+	GBA_REGION_XRAM = 0x1, // extra RAM: 0x01000000-0x01FFFFFF, no wait states
 	GBA_REGION_EWRAM = 0x2,
 	GBA_REGION_IWRAM = 0x3,
 	GBA_REGION_IO = 0x4,
@@ -40,6 +41,7 @@ enum GBAMemoryRegion {
 
 enum GBAMemoryBase {
 	GBA_BASE_BIOS = 0x00000000,
+	GBA_BASE_XRAM = 0x01000000,
 	GBA_BASE_EWRAM = 0x02000000,
 	GBA_BASE_IWRAM = 0x03000000,
 	GBA_BASE_IO = 0x04000000,
@@ -71,6 +73,7 @@ enum {
 	GBA_SIZE_SRAM512 = 0x00010000,
 	GBA_SIZE_FLASH512 = 0x00010000,
 	GBA_SIZE_FLASH1M = 0x00020000,
+	GBA_SIZE_XRAM = 0x01000000,
 	GBA_SIZE_EEPROM = 0x00002000,
 	GBA_SIZE_EEPROM512 = 0x00000200,
 
@@ -103,6 +106,7 @@ struct GBAMemory {
 	uint32_t* bios;
 	uint32_t* wram;
 	uint32_t* iwram;
+	uint32_t* xram;
 	uint32_t* rom;
 	uint16_t io[512];
 

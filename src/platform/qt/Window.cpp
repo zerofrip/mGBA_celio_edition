@@ -33,6 +33,9 @@
 #include "DebuggerConsoleController.h"
 #include "Display.h"
 #include "DolphinConnector.h"
+#ifdef _WIN32
+#include "CelioNetView.h"
+#endif
 #include "CoreController.h"
 #include "ForwarderView.h"
 #include "FrameView.h"
@@ -1445,6 +1448,9 @@ void Window::setupMenu(QMenuBar* menubar) {
 
 #ifdef M_CORE_GBA
 	auto dolphin = m_actions.addAction(tr("Connect to Dolphin..."), "connectDolphin", openNamedTView<DolphinConnector>(&m_dolphinView, true, this), "file");
+#ifdef _WIN32
+	m_actions.addAction(tr("ネット通信..."), "celioNet", openNamedTView<CelioNetView>(&m_celioNetView, true, this), "file");
+#endif
 	m_platformActions.insert(mPLATFORM_GBA, dolphin);
 #endif
 
@@ -2240,6 +2246,9 @@ void Window::setController(CoreController* controller, const QString& fname) {
 	connect(m_controller.get(), &CoreController::crashed, this, &Window::gameCrashed);
 	connect(m_controller.get(), &CoreController::failed, this, &Window::gameFailed);
 	connect(m_controller.get(), &CoreController::unimplementedBiosCall, this, &Window::unimplementedBiosCall);
+#ifdef _WIN32
+	CelioNetView::hookController(m_controller);
+#endif
 
 #ifdef M_CORE_GBA
 	if (m_controller->platform() == mPLATFORM_GBA) {

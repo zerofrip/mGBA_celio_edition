@@ -58,6 +58,7 @@ void GBAMemoryInit(struct GBA* gba) {
 	gba->memory.fullBios = 0;
 	gba->memory.wram = 0;
 	gba->memory.iwram = 0;
+	gba->memory.xram = anonymousMemoryMap(GBA_SIZE_XRAM);
 	gba->memory.rom = 0;
 	gba->memory.romSize = 0;
 	gba->memory.romMask = 0;
@@ -106,6 +107,10 @@ void GBAMemoryInit(struct GBA* gba) {
 
 void GBAMemoryDeinit(struct GBA* gba) {
 	mappedMemoryFree(gba->memory.wram, GBA_SIZE_EWRAM + GBA_SIZE_IWRAM);
+	if (gba->memory.xram) {
+		mappedMemoryFree(gba->memory.xram, GBA_SIZE_XRAM);
+		gba->memory.xram = NULL;
+	}
 	if (gba->memory.rom) {
 		mappedMemoryFree(gba->memory.rom, gba->memory.romSize);
 	}
@@ -126,6 +131,9 @@ void GBAMemoryReset(struct GBA* gba) {
 
 	if (gba->memory.iwram) {
 		memset(gba->memory.iwram, 0, GBA_SIZE_IWRAM);
+	}
+	if (gba->memory.xram) {
+		memset(gba->memory.xram, 0, GBA_SIZE_XRAM);
 	}
 
 	memset(gba->memory.io, 0, sizeof(gba->memory.io));
@@ -318,6 +326,11 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 		cpu->memory.activeRegion = memory->iwram;
 		cpu->memory.activeMask = GBA_SIZE_IWRAM - 1;
 		break;
+	case GBA_REGION_XRAM:
+		cpu->memory.accessSource = mACCESS_PROGRAM;
+		cpu->memory.activeRegion = memory->xram;
+		cpu->memory.activeMask = GBA_SIZE_XRAM - 1;
+		break;
 	case GBA_REGION_PALETTE_RAM:
 		cpu->memory.accessSource = mACCESS_PROGRAM;
 		cpu->memory.activeRegion = (uint32_t*) gba->video.palette;
@@ -401,7 +414,10 @@ static void GBASetActiveRegion(struct ARMCore* cpu, uint32_t address) {
 	wait += waitstatesRegion[GBA_REGION_EWRAM];
 
 #define LOAD_IWRAM LOAD_32(value, address & (GBA_SIZE_IWRAM - 4), memory->iwram);
-#define LOAD_IO value = GBAIORead(gba, address & OFFSET_MASK & ~3) | (GBAIORead(gba, (address & OFFSET_MASK & ~1) | 2) << 16);
+#define LOAD_XRAM LOAD_32(value, address & (GBA_SIZE_XRAM - 4), memory->xram);
+#define LOAD_IO \
+	if (gba->sioReadHook && ((address & OFFSET_MASK & ~3) == GBA_REG_SIOMULTI0)) gba->sioReadHook(gba->sioReadHookContext); \
+	value = GBAIORead(gba, address & OFFSET_MASK & ~3) | (GBAIORead(gba, (address & OFFSET_MASK & ~1) | 2) << 16);
 
 #define LOAD_PALETTE_RAM \
 	LOAD_32(value, address & (GBA_SIZE_PALETTE_RAM - 4), gba->video.palette); \
@@ -493,6 +509,9 @@ uint32_t GBALoad32(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 	case GBA_REGION_IWRAM:
 		LOAD_IWRAM;
 		break;
+	case GBA_REGION_XRAM:
+		LOAD_XRAM;
+		break;
 	case GBA_REGION_IO:
 		LOAD_IO;
 		break;
@@ -562,7 +581,13 @@ uint32_t GBALoad16(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 	case GBA_REGION_IWRAM:
 		LOAD_16(value, address & (GBA_SIZE_IWRAM - 2), memory->iwram);
 		break;
+	case GBA_REGION_XRAM:
+		LOAD_16(value, address & (GBA_SIZE_XRAM - 2), memory->xram);
+		break;
 	case GBA_REGION_IO:
+		if (gba->sioReadHook && (address & (OFFSET_MASK - 1)) == GBA_REG_SIOMULTI1) {
+			gba->sioReadHook(gba->sioReadHookContext);
+		}
 		value = GBAIORead(gba, address & (OFFSET_MASK - 1));
 		break;
 	case GBA_REGION_PALETTE_RAM:
@@ -677,7 +702,13 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 	case GBA_REGION_IWRAM:
 		value = ((uint8_t*) memory->iwram)[address & (GBA_SIZE_IWRAM - 1)];
 		break;
+	case GBA_REGION_XRAM:
+		value = ((uint8_t*) memory->xram)[address & (GBA_SIZE_XRAM - 1)];
+		break;
 	case GBA_REGION_IO:
+		if (gba->sioReadHook && (address & 0xFFFE) == GBA_REG_SIOMULTI1) {
+			gba->sioReadHook(gba->sioReadHookContext);
+		}
 		value = (GBAIORead(gba, address & 0xFFFE) >> ((address & 0x0001) << 3)) & 0xFF;
 		break;
 	case GBA_REGION_PALETTE_RAM:
@@ -766,6 +797,9 @@ uint32_t GBALoad8(struct ARMCore* cpu, uint32_t address, int* cycleCounter) {
 #define STORE_IWRAM \
 	STORE_32(value, address & (GBA_SIZE_IWRAM - 4), memory->iwram);
 
+#define STORE_XRAM \
+	STORE_32(value, address & (GBA_SIZE_XRAM - 4), memory->xram);
+
 #define STORE_IO \
 	GBAIOWrite32(gba, address & (OFFSET_MASK - 3), value);
 
@@ -839,6 +873,9 @@ void GBAStore32(struct ARMCore* cpu, uint32_t address, int32_t value, int* cycle
 	case GBA_REGION_IWRAM:
 		STORE_IWRAM
 		break;
+	case GBA_REGION_XRAM:
+		STORE_XRAM
+		break;
 	case GBA_REGION_IO:
 		STORE_IO;
 		break;
@@ -890,6 +927,9 @@ void GBAStore16(struct ARMCore* cpu, uint32_t address, int16_t value, int* cycle
 		break;
 	case GBA_REGION_IWRAM:
 		STORE_16(value, address & (GBA_SIZE_IWRAM - 2), memory->iwram);
+		break;
+	case GBA_REGION_XRAM:
+		STORE_16(value, address & (GBA_SIZE_XRAM - 2), memory->xram);
 		break;
 	case GBA_REGION_IO:
 		GBAIOWrite(gba, address & (OFFSET_MASK - 1), value);
@@ -1036,6 +1076,9 @@ void GBAStore8(struct ARMCore* cpu, uint32_t address, int8_t value, int* cycleCo
 	case GBA_REGION_IWRAM:
 		((int8_t*) memory->iwram)[address & (GBA_SIZE_IWRAM - 1)] = value;
 		break;
+	case GBA_REGION_XRAM:
+		((int8_t*) memory->xram)[address & (GBA_SIZE_XRAM - 1)] = value;
+		break;
 	case GBA_REGION_IO:
 		GBAIOWrite8(gba, address & OFFSET_MASK, value);
 		break;
@@ -1120,6 +1163,7 @@ uint32_t GBAView32(struct ARMCore* cpu, uint32_t address) {
 		break;
 	case GBA_REGION_EWRAM:
 	case GBA_REGION_IWRAM:
+	case GBA_REGION_XRAM:
 	case GBA_REGION_PALETTE_RAM:
 	case GBA_REGION_VRAM:
 	case GBA_REGION_OAM:
@@ -1159,6 +1203,7 @@ uint16_t GBAView16(struct ARMCore* cpu, uint32_t address) {
 		break;
 	case GBA_REGION_EWRAM:
 	case GBA_REGION_IWRAM:
+	case GBA_REGION_XRAM:
 	case GBA_REGION_PALETTE_RAM:
 	case GBA_REGION_VRAM:
 	case GBA_REGION_OAM:
@@ -1199,6 +1244,7 @@ uint8_t GBAView8(struct ARMCore* cpu, uint32_t address) {
 		break;
 	case GBA_REGION_EWRAM:
 	case GBA_REGION_IWRAM:
+	case GBA_REGION_XRAM:
 	case GBA_REGION_ROM0:
 	case GBA_REGION_ROM0_EX:
 	case GBA_REGION_ROM1:
@@ -1233,6 +1279,10 @@ void GBAPatch32(struct ARMCore* cpu, uint32_t address, int32_t value, int32_t* o
 	case GBA_REGION_IWRAM:
 		LOAD_32(oldValue, address & (GBA_SIZE_IWRAM - 4), memory->iwram);
 		STORE_32(value, address & (GBA_SIZE_IWRAM - 4), memory->iwram);
+		break;
+	case GBA_REGION_XRAM:
+		LOAD_32(oldValue, address & (GBA_SIZE_XRAM - 4), memory->xram);
+		STORE_32(value, address & (GBA_SIZE_XRAM - 4), memory->xram);
 		break;
 	case GBA_REGION_IO:
 		mLOG(GBA_MEM, STUB, "Unimplemented memory Patch32: 0x%08X", address);
@@ -1307,6 +1357,10 @@ void GBAPatch16(struct ARMCore* cpu, uint32_t address, int16_t value, int16_t* o
 	case GBA_REGION_IWRAM:
 		LOAD_16(oldValue, address & (GBA_SIZE_IWRAM - 2), memory->iwram);
 		STORE_16(value, address & (GBA_SIZE_IWRAM - 2), memory->iwram);
+		break;
+	case GBA_REGION_XRAM:
+		LOAD_16(oldValue, address & (GBA_SIZE_XRAM - 2), memory->xram);
+		STORE_16(value, address & (GBA_SIZE_XRAM - 2), memory->xram);
 		break;
 	case GBA_REGION_IO:
 		if (address == 0x400010E) {
@@ -1396,6 +1450,10 @@ void GBAPatch8(struct ARMCore* cpu, uint32_t address, int8_t value, int8_t* old)
 	case GBA_REGION_IWRAM:
 		oldValue = ((int8_t*) memory->iwram)[address & (GBA_SIZE_IWRAM - 1)];
 		((int8_t*) memory->iwram)[address & (GBA_SIZE_IWRAM - 1)] = value;
+		break;
+	case GBA_REGION_XRAM:
+		oldValue = ((int8_t*) memory->xram)[address & (GBA_SIZE_XRAM - 1)];
+		((int8_t*) memory->xram)[address & (GBA_SIZE_XRAM - 1)] = value;
 		break;
 	case GBA_REGION_IO:
 		mLOG(GBA_MEM, STUB, "Unimplemented memory Patch8: 0x%08X", address);
@@ -1527,6 +1585,9 @@ uint32_t GBALoadMultiple(struct ARMCore* cpu, uint32_t address, int mask, enum L
 	case GBA_REGION_IWRAM:
 		LDM_LOOP(LOAD_IWRAM);
 		break;
+	case GBA_REGION_XRAM:
+		LDM_LOOP(LOAD_XRAM);
+		break;
 	case GBA_REGION_IO:
 		LDM_LOOP(LOAD_IO);
 		break;
@@ -1645,6 +1706,9 @@ uint32_t GBAStoreMultiple(struct ARMCore* cpu, uint32_t address, int mask, enum 
 		break;
 	case GBA_REGION_IWRAM:
 		STM_LOOP(STORE_IWRAM);
+		break;
+	case GBA_REGION_XRAM:
+		STM_LOOP(STORE_XRAM);
 		break;
 	case GBA_REGION_IO:
 		STM_LOOP(STORE_IO);

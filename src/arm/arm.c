@@ -46,6 +46,8 @@ void ARMSetPrivilegeMode(struct ARMCore* cpu, enum PrivilegeMode mode) {
 
 void ARMInit(struct ARMCore* cpu) {
 	cpu->memory.fetch = NULL;
+	cpu->overclockShift = 0;
+	cpu->overclockFrac = 0;
 	memset(cpu->cp, 0, sizeof(cpu->cp));
 	cpu->master->init(cpu, cpu->master);
 	size_t i;
@@ -116,6 +118,7 @@ void ARMReset(struct ARMCore* cpu) {
 	ARMWritePC(cpu);
 
 	cpu->cycles = 0;
+	cpu->overclockFrac = 0;
 	cpu->nextEvent = 0;
 	cpu->halted = 0;
 

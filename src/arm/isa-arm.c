@@ -279,6 +279,7 @@ ATTRIBUTE_NOINLINE static void _neutralS(struct ARMCore* cpu, int32_t d) {
 	static void _ARMInstruction ## NAME (struct ARMCore* cpu, uint32_t opcode) { \
 		int currentCycles = ARM_PREFETCH_CYCLES; \
 		BODY; \
+		ARM_OVERCLOCK_CYCLES(cpu, currentCycles); \
 		cpu->cycles += currentCycles; \
 	}
 

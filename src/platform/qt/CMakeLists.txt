@@ -219,6 +219,12 @@ set(GBA_SRC
 	DolphinConnector.cpp
 	GBAOverride.cpp)
 
+if(WIN32)
+	list(APPEND GBA_SRC CelioNet.cpp CelioNetView.cpp)
+	# With LTO these two files broke the Lua bindings (callbacks:add failed with "invoking failed")
+	set_source_files_properties(CelioNet.cpp CelioNetView.cpp PROPERTIES COMPILE_OPTIONS -fno-lto)
+endif()
+
 set(GB_SRC
 	GameBoy.cpp
 	GBOverride.cpp
@@ -455,7 +461,7 @@ set_target_properties(${BINARY_NAME}-qt PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${PR
 
 if(WIN32)
 	set_target_properties(${BINARY_NAME}-qt PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-	target_link_libraries(${BINARY_NAME}-qt dwmapi)
+	target_link_libraries(${BINARY_NAME}-qt dwmapi winhttp setupapi ws2_32)
 	if(NOT MSVC)
 		target_link_libraries(${BINARY_NAME}-qt -municode)
 	endif()

@@ -95,6 +95,8 @@ static unsigned imcapWidth;
 static unsigned imcapHeight;
 static size_t camStride;
 static bool deferredSetup = false;
+// 1MB flash extension: a 64MB ROM gets the whole 1MB save, reported to the frontend from the start
+static bool saveExt = false;
 static bool useBitmasks = true;
 static bool envVarsUpdated;
 static int32_t tiltX = 0;
@@ -346,7 +348,11 @@ static void _doDeferredSetup(void) {
 	// On the off-hand chance that a core actually expects its buffers to be populated when
 	// you actually first get them, you're out of luck without workarounds. Yup, seriously.
 	// Here's that workaround, but really the API needs to be thrown out and rewritten.
-	struct VFile* save = VFileFromMemory(savedata, GBA_SIZE_FLASH1M);
+	// The buffer is always 1MB so the flash can grow (banks 2..15); other ROMs start at 128KB as before
+	struct VFile* save = VFileFromMemory(savedata, GBA_SIZE_FLASH_EXT);
+	if (!saveExt) {
+		save->truncate(save, GBA_SIZE_FLASH1M);
+	}
 	if (!core->loadSave(core, save)) {
 		save->close(save);
 	}
@@ -917,8 +923,9 @@ bool retro_load_game(const struct retro_game_info* game) {
 	core->setPeripheral(core, mPERIPH_RUMBLE, &rumble);
 	core->setPeripheral(core, mPERIPH_ROTATION, &rotation);
 
-	savedata = anonymousMemoryMap(GBA_SIZE_FLASH1M);
-	memset(savedata, 0xFF, GBA_SIZE_FLASH1M);
+	saveExt = core->platform(core) == mPLATFORM_GBA && rom->size(rom) == 0x4000000;
+	savedata = anonymousMemoryMap(GBA_SIZE_FLASH_EXT);
+	memset(savedata, 0xFF, GBA_SIZE_FLASH_EXT);
 
 	_reloadSettings();
 	core->loadROM(core, rom);
@@ -998,7 +1005,7 @@ void retro_unload_game(void) {
 	core->deinit(core);
 	mappedMemoryFree(data, dataSize);
 	data = 0;
-	mappedMemoryFree(savedata, GBA_SIZE_FLASH1M);
+	mappedMemoryFree(savedata, GBA_SIZE_FLASH_EXT);
 	savedata = 0;
 }
 
@@ -1151,6 +1158,9 @@ size_t retro_get_memory_size(unsigned id) {
 		switch (core->platform(core)) {
 #ifdef M_CORE_GBA
 		case mPLATFORM_GBA:
+			if (saveExt) {
+				return GBA_SIZE_FLASH_EXT;
+			}
 			switch (((struct GBA*) core->board)->memory.savedata.type) {
 			case GBA_SAVEDATA_AUTODETECT:
 				return GBA_SIZE_FLASH1M;

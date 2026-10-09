@@ -383,8 +383,14 @@ static void _GBACoreLoadConfig(struct mCore* core, const struct mCoreConfig* con
 	}
 
 	mCoreConfigGetBoolValue(config, "allowOpposingDirections", &gba->allowOpposingDirections);
+	{
+		int overclock = 0;
+		mCoreConfigGetIntValue(config, "overclock", &overclock);
+		GBASetOverclock(gba, overclock);
+	}
 
 	mCoreConfigCopyValue(&core->config, config, "allowOpposingDirections");
+	mCoreConfigCopyValue(&core->config, config, "overclock");
 	mCoreConfigCopyValue(&core->config, config, "gba.bios");
 	mCoreConfigCopyValue(&core->config, config, "gba.forceGbp");
 	mCoreConfigCopyValue(&core->config, config, "vbaBugCompat");
@@ -433,6 +439,15 @@ static void _GBACoreReloadConfigOption(struct mCore* core, const char* option, c
 		if (mCoreConfigGetIntValue(config, "frameskip", &core->opts.frameskip)) {
 			gba->video.frameskip = core->opts.frameskip;
 		}
+		return;
+	}
+	if (strcmp("overclock", option) == 0) {
+		int overclock = 0;
+		if (config != &core->config) {
+			mCoreConfigCopyValue(&core->config, config, "overclock");
+		}
+		mCoreConfigGetIntValue(config, "overclock", &overclock);
+		GBASetOverclock(gba, overclock);
 		return;
 	}
 	if (strcmp("allowOpposingDirections", option) == 0) {
@@ -898,6 +913,14 @@ static bool _GBACoreLoadExtraState(struct mCore* core, const struct mStateExtdat
 	struct GBA* gba = core->board;
 	struct mStateExtdataItem item;
 	bool ok = true;
+	if (gba->memory.xram) {
+		// extra RAM: the state holds the used part; the rest is zero
+		memset(gba->memory.xram, 0, GBA_SIZE_XRAM);
+		if (mStateExtdataGet(extdata, EXTDATA_SUBSYSTEM_START + GBA_SUBSYSTEM_XRAM, &item) && item.data) {
+			size_t size = (size_t) item.size < GBA_SIZE_XRAM ? (size_t) item.size : GBA_SIZE_XRAM;
+			memcpy(gba->memory.xram, item.data, size);
+		}
+	}
 	if (mStateExtdataGet(extdata, EXTDATA_SUBSYSTEM_START + GBA_SUBSYSTEM_VIDEO_RENDERER, &item)) {
 		if ((uint32_t) item.size > sizeof(uint32_t)) {
 			uint32_t type;
@@ -932,6 +955,33 @@ static bool _GBACoreSaveExtraState(struct mCore* core, struct mStateExtdata* ext
 	struct GBA* gba = core->board;
 	void* buffer = NULL;
 	size_t size = 0;
+	if (gba->memory.xram) {
+		// extra RAM: store up to the last 4KB page that is not all zero
+		const uint8_t* x = (const uint8_t*) gba->memory.xram;
+		size_t used = GBA_SIZE_XRAM;
+		while (used > 0) {
+			size_t i;
+			bool zero = true;
+			for (i = used - 0x1000; i < used; i += 4) {
+				if (*(const uint32_t*) &x[i]) {
+					zero = false;
+					break;
+				}
+			}
+			if (!zero) {
+				break;
+			}
+			used -= 0x1000;
+		}
+		if (used > 0) {
+			struct mStateExtdataItem item;
+			item.size = used;
+			item.data = malloc(used);
+			item.clean = free;
+			memcpy(item.data, x, used);
+			mStateExtdataPut(extdata, EXTDATA_SUBSYSTEM_START + GBA_SUBSYSTEM_XRAM, &item);
+		}
+	}
 	gba->video.renderer->saveState(gba->video.renderer, &buffer, &size);
 	if (size > 0 && buffer) {
 		struct mStateExtdataItem item;

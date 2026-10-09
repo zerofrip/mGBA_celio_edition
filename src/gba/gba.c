@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include <mgba/internal/gba/gba.h>
 
+#include <stdlib.h>
+
 #include <mgba/internal/arm/isa-inlines.h>
 #include <mgba/internal/arm/debugger/debugger.h>
 #include <mgba/internal/arm/decoder.h>
@@ -122,6 +124,7 @@ static void GBAInit(void* cpu, struct mCPUComponent* component) {
 	gba->vbaBugCompat = false;
 	gba->hardCrash = true;
 	gba->allowOpposingDirections = true;
+	gba->overclock = 0;
 
 	gba->performingDMA = false;
 
@@ -231,6 +234,17 @@ void GBAInterruptHandlerInit(struct ARMInterruptHandler* irqh) {
 	irqh->bkpt32 = GBABreakpoint;
 }
 
+void GBASetOverclock(struct GBA* gba, int mul) {
+	// CPU overclock: config "overclock" (1/2/4/8), else MGBA_OVERCLOCK, else 2
+	gba->overclock = mul;
+	if (mul <= 0) {
+		const char* oc = getenv("MGBA_OVERCLOCK");
+		mul = oc ? atoi(oc) : 2;
+	}
+	gba->cpu->overclockShift = mul >= 8 ? 3 : mul >= 4 ? 2 : mul >= 2 ? 1 : 0;
+	gba->cpu->overclockFrac = 0;
+}
+
 void GBAReset(struct ARMCore* cpu) {
 	ARMSetPrivilegeMode(cpu, MODE_IRQ);
 	cpu->gprs[ARM_SP] = GBA_SP_BASE_IRQ;
@@ -254,6 +268,7 @@ void GBAReset(struct ARMCore* cpu) {
 		gba->yankedRomSize = 0;
 	}
 	gba->lastRumble = 0;
+	GBASetOverclock(gba, gba->overclock);
 	mTimingClear(&gba->timing);
 	GBAMemoryReset(gba);
 	GBAVideoReset(&gba->video);

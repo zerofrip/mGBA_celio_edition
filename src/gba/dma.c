@@ -53,7 +53,7 @@ static bool _isValidDMASAD(int dma, uint32_t address) {
 	if (dma == 0 && address >= GBA_BASE_ROM0 && address < GBA_BASE_SRAM) {
 		return false;
 	}
-	return address >= GBA_BASE_EWRAM;
+	return address >= GBA_BASE_XRAM; // extra RAM can be a DMA source
 }
 
 static bool _isValidDMADAD(int dma, uint32_t address) {
@@ -280,7 +280,7 @@ void GBADMAService(struct GBA* gba, int number, struct GBADMA* info) {
 			cycles += memory->waitstatesNonseq32[sourceRegion] + memory->waitstatesNonseq32[destRegion];
 			info->cycles = memory->waitstatesSeq32[sourceRegion] + memory->waitstatesSeq32[destRegion];
 		} else {
-			if (source >= GBA_BASE_EWRAM) {
+			if (source >= GBA_BASE_XRAM) {
 				info->latch = cpu->memory.load32(cpu, source, 0);
 			}
 			cycles += memory->waitstatesNonseq16[sourceRegion] + memory->waitstatesNonseq16[destRegion];
@@ -292,7 +292,7 @@ void GBADMAService(struct GBA* gba, int number, struct GBADMA* info) {
 	info->when += cycles;
 
 	if (width == 4) {
-		if (source >= GBA_BASE_EWRAM) {
+		if (source >= GBA_BASE_XRAM) {
 			info->latch = cpu->memory.load32(cpu, source, 0);
 		}
 		cpu->memory.store32(cpu, dest, info->latch, 0);
@@ -301,7 +301,7 @@ void GBADMAService(struct GBA* gba, int number, struct GBADMA* info) {
 		if (sourceRegion == GBA_REGION_ROM2_EX && (memory->savedata.type == GBA_SAVEDATA_EEPROM || memory->savedata.type == GBA_SAVEDATA_EEPROM512)) {
 			info->latch = GBASavedataReadEEPROM(&memory->savedata);
 			info->latch |= info->latch << 16;
-		} else if (source >= GBA_BASE_EWRAM) {
+		} else if (source >= GBA_BASE_XRAM) {
 			info->latch = cpu->memory.load16(cpu, source, 0);
 			info->latch |= info->latch << 16;
 		}

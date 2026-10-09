@@ -85,7 +85,12 @@ struct GBASavedata {
 	uint32_t dirtAge;
 
 	enum FlashStateMachine flashState;
+
+	// 1MB flash extension: banks 2..15 exist only after the game switches to them
+	bool flashExt;
 };
+
+#define GBA_SIZE_FLASH_EXT 0x00100000
 
 struct GBASavedataRTCBuffer {
 	uint8_t time[7];

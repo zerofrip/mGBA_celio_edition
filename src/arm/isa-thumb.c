@@ -59,6 +59,7 @@
 	static void _ThumbInstruction ## NAME (struct ARMCore* cpu, unsigned opcode) {  \
 		int currentCycles = THUMB_PREFETCH_CYCLES; \
 		BODY; \
+		ARM_OVERCLOCK_CYCLES(cpu, currentCycles); \
 		cpu->cycles += currentCycles; \
 	}
 

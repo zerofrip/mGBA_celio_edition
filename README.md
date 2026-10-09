@@ -7,7 +7,19 @@
 > - ROMs of 32MiB or less behave as before.
 > - The reported git commit can be overridden with the `MGBA_GIT_COMMIT` environment variable at build time,
 >   so that Celio-mGBA-Link (which checks the commit of celio edition 2.0.0) keeps working.
-> - Games that use the second half of a 64MiB ROM only work on this build; other emulators and real hardware cannot read it.
+> - Windows build: File > ネット通信... (online link) connects two players through the public [Celio](https://github.com/Celio-Link) relay
+>   with a 4-digit room number. No Lua script or web page is needed.
+> - Windows build: a real GBA can join through a GBLink / Celio USB adapter (its CDC serial port), either linked
+>   directly with this emulator (no server) or entering a relay room in place of the emulated GBA. No web page is needed.
+> - Flash saves of up to 1MiB: a game that switches to flash banks 2-15 grows its 128KiB save to 1MiB.
+>   Saves of other games stay at 128KiB. Real carts only have banks 0 and 1, so games should only do this on this build.
+> - CPU overclock: instruction cycles are counted at 1/N (config `overclock` or `MGBA_OVERCLOCK`: 1, 2, 4 or 8; **default 2**).
+>   DMA, video, audio, timers and serial keep their real timing, so games only lag less. Set `overclock=1` for real speed.
+> - 16MiB of extra RAM at `0x01000000`-`0x01FFFFFF` (unused on real hardware): zero wait states, code can run from it,
+>   DMA can read it, and save states keep it. The BIOS CpuSet/CpuFastSet refuse it as a source, as on real hardware.
+> - LTO is off by default (`BUILD_LTO`): with it, the Lua bindings break on this branch.
+> - Games that use the second half of a 64MiB ROM, flash banks 2-15 or the extra RAM only work on this build;
+>   other emulators and real hardware cannot use them.
 >
 > See [readme.txt](readme.txt) (Japanese) for usage notes. License: MPL-2.0, same as mGBA.
 

@@ -93,6 +93,9 @@ struct GBA {
 	int32_t lastRumble;
 
 	struct mSioMask* sioMask;
+	// Called before the CPU reads SIOMULTI1 (net link; same timing as the Celio script watchpoint)
+	void (*sioReadHook)(void* context);
+	void* sioReadHookContext;
 
 	bool isPristine;
 	size_t pristineRomSize;
@@ -123,6 +126,7 @@ struct GBA {
 	bool vbaBugCompat;
 	bool hardCrash;
 	bool allowOpposingDirections;
+	int overclock; // CPU overclock: 1/2/4/8, 0 = MGBA_OVERCLOCK or 2
 
 	bool debug;
 	char debugString[0x100];
@@ -148,6 +152,7 @@ void GBACreate(struct GBA* gba);
 void GBADestroy(struct GBA* gba);
 
 void GBAReset(struct ARMCore* cpu);
+void GBASetOverclock(struct GBA* gba, int mul);
 void GBASkipBIOS(struct GBA* gba);
 
 void GBARaiseIRQ(struct GBA* gba, enum GBAIRQ irq, uint32_t cyclesLate);

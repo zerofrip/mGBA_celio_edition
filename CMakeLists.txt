@@ -176,11 +176,8 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/core/version.c.in ${CMAKE_CURRENT
 source_group("Generated sources" FILES ${CMAKE_CURRENT_BINARY_DIR}/version.c)
 
 # Advanced settings
-if(NOT (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS "4.5"))
-	set(DEFAULT_LTO ON)
-else()
-	set(DEFAULT_LTO OFF)
-endif()
+# LTO is off by default on this branch: with it, the Lua bindings fail ("Invalid key" / "invoking failed")
+set(DEFAULT_LTO OFF)
 
 if(NOT LIBMGBA_ONLY)
 	set(BUILD_LTO ${DEFAULT_LTO} CACHE BOOL "Build with link-time optimization")
